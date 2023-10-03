@@ -101,4 +101,5 @@ func getRublePrice(delta float64) (float64, error) {
 		log.Println("значение курса рубля получено от биржи")
 		return baseRublePrice + delta, err
 	}
+
 }
