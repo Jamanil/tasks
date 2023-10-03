@@ -39,10 +39,9 @@ func getRublePrice(delta float64) (float64, error) {
 		baseRublePrice = math.Float64frombits(binary.BigEndian.Uint64(item.Value))
 		log.Println("значение курса рубля получено из memcached")
 		return baseRublePrice + delta, err
-	} else
-	//Если при обращении к memcached пришла ошибка, но заключается она не в том, что значения по ключу нет
-	if !errors.Is(err, memcache.ErrCacheMiss) {
-		//Завершаем функцию, выдаем ошибку
+	} else if !errors.Is(err, memcache.ErrCacheMiss) {
+		//Если при обращении к memcached пришла ошибка, но заключается она не в том, что значения по ключу нет
+		//завершаем функцию, выдаем ошибку
 		return 0, err
 	} else {
 		//Если ошибка получения значения из memcached заключается в том, что такого значения нет, получаем значение от биржи
@@ -78,7 +77,7 @@ func getRublePrice(delta float64) (float64, error) {
 			return 0, errors.New(r.Chart.Error)
 		}
 
-		//Извлекаем цену с проверкой на возможную ошибку, исключаем получение паники из-за длины среза
+		//Извлекаем курс с проверкой на возможную ошибку, исключаем панику из-за длины среза
 		if len(r.Chart.Result) == 1 {
 			baseRublePrice = r.Chart.Result[0].Meta.RegularMarketPrice
 		} else {
@@ -90,8 +89,7 @@ func getRublePrice(delta float64) (float64, error) {
 		binary.BigEndian.PutUint64(buf[:], math.Float64bits(baseRublePrice))
 
 		err = mc.Set(&memcache.Item{
-			Key: key,
-			//Для записи в memcached конвертируем float64 в []byte
+			Key:        key,
 			Value:      buf[:],
 			Expiration: priceExpiration,
 		})
