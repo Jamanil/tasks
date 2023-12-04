@@ -1,18 +1,27 @@
 package main
 
 import (
+	"crypto/sha1"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/bradfitz/gomemcache/memcache"
+	"io"
 	"log"
 	"math"
 	"net/http"
+	"strconv"
+)
+
+var (
+	mc *memcache.Client
 )
 
 func main() {
-	fmt.Println(getRublePrice(-70))
+	mc = memcache.New("localhost:11211")
+	fmt.Println(getAlephiumPrice(0))
 }
 
 func getRublePrice(delta float64) (float64, error) {
@@ -102,4 +111,75 @@ func getRublePrice(delta float64) (float64, error) {
 		return baseRublePrice + delta, err
 	}
 
+}
+
+// getAlephiumPrice - курс Alphium к USD с добавленной дельтой
+// <- memcache
+func getAlephiumPrice(delta float64) (float64, error) {
+	type GetAlphiumPrice struct {
+		Alephium struct {
+			Usd float64 `json:"usd"`
+		} `json:"alephium"`
+	}
+
+	var alphData GetAlphiumPrice
+	var alphUSD float64
+
+	// Memcache
+	mcKey := "func/getAlpheniumPrice"
+	mcKey = generateSHA1Hash(mcKey)
+	mcGet, err := mc.Get(mcKey)
+	if err != nil || mcGet == nil {
+		client := &http.Client{}
+		req, err := http.NewRequest(http.MethodGet, "https://api.coingecko.com/api/v3/simple/price?ids=alephium&vs_currencies=USD", nil)
+		if err != nil {
+			return alphUSD, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return alphUSD, err
+		}
+		defer resp.Body.Close()
+
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return alphUSD, err
+		}
+
+		err = json.Unmarshal(respBody, &alphData)
+		if err != nil {
+			return alphUSD, err
+		}
+
+		alphUSD = alphData.Alephium.Usd
+
+		// Запись в Memcache
+		mcBody := []byte(floatToString(alphUSD))
+		mc.Set(&memcache.Item{Key: mcKey, Value: mcBody, Expiration: 60})
+	} else {
+		// Получение данных из Memcache
+		alphUSD = stringToFloat(string(mcGet.Value))
+	}
+
+	// Добавляем биржевую вилку
+	alphUSD += delta
+
+	return alphUSD, nil
+}
+
+func stringToFloat(s string) float64 {
+	f, _ := strconv.ParseFloat(s, 64)
+	return f
+}
+
+func floatToString(f float64) string {
+	return strconv.FormatFloat(f, 'g', -1, 64)
+}
+
+func generateSHA1Hash(key string) string {
+	bData := []byte(key)
+	bHex := sha1.Sum(bData)
+	strHex := hex.EncodeToString(bHex[:])
+	return strHex
 }
